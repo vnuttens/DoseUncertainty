@@ -1,0 +1,182 @@
+import matplotlib.pyplot as plt
+import numpy as np
+import lmfit
+from scipy.special import erf
+
+# Victor Nuttens
+# V03
+# 14/02/2023
+#--------------------------------------------------------------------------
+
+def uncertainty(vol,Atil,FWHM=0.8,showcurve=False,printing=False):
+
+    plt.close('all')
+    vox_w = 0.4795199  # cm
+    m = vol * 1.05
+
+    ucref = 1.2 / 100  # Fractional uncertainty 1.2%: https://iopscience.iop.org/article/10.1088/1742-6596/1505/1/012023/pdf
+    uA = 7.6 / 100  # for a Symbia T16, expected to be higher
+
+    # Uncertainty of volume
+
+    uvox2 = (vox_w**2)/6
+    ures2 = (FWHM/(2*np.sqrt(np.log(2))))**2
+    ud2 = uvox2+ures2
+    d = (6*vol/np.pi)**(1/3)
+    r = d/2
+    sigma = np.sqrt(ures2)
+    uv_v = 3*np.sqrt(ud2)/d
+    uv = uv_v*vol
+
+    #--------------------------------------------------------------------------
+    # Uncertainty of recovery coefficient
+
+    #counts = [13848.77,42947.12,150036.91,471316.22,1222351.62,3276191]
+    recco12 = [0.159446017,0.325306641,0.53982203,0.750890887,0.952620946,1]
+    recco4 = [0.427499225,0.691258239,0.841570147,0.940855362,1.03086576,1]
+    volume = [0.75,1.14,2.4,5.42,11.08,28.29]
+    t = np.linspace(0, vol, 1000)
+
+    # https://link.springer.com/article/10.1007/s00259-018-4136-7
+    model = lmfit.models.ExpressionModel("1-1/(1+(x/b1)**b2)")
+    b1=2
+    b2=4
+    params = model.make_params(b1=b1,b2=b2)
+    params4 = model.make_params(b1=b1,b2=b2)
+
+    fit = model.fit(recco12, params, x=volume)
+    fit4 = model.fit(recco4, params4, x=volume) #for a 4mm gaussian filter
+
+    b1 = fit.params["b1"].value
+    b2 = fit.params["b2"].value
+    b14 = fit4.params["b1"].value
+    b24 = fit4.params["b2"].value
+
+    R_conti = 1-1/(1+(t/b1)**b2)
+    R_conti4 = 1-1/(1+(t/b14)**b24)
+    corrected = 1-1/(1+(vol/b1)**b2)
+
+    R = corrected
+    a = b1
+    b = b2
+
+    da = -(b*((vol/a)**b))/(a*(1 + ((vol/a)**b))**2)
+    db = (((vol/a)**b)*np.log(vol/a))/((1 + ((vol/a)**b))**2)
+    dv = (b*(vol/a)**b)/(vol*((1 + ((vol/a)**b))**2))
+    Vb = fit.covar
+    gb = [da,db]
+    uRb = np.sqrt(np.matmul(np.matmul(gb,Vb),np.transpose(gb)))
+    uRb_R = uRb/R
+    gbv = [da,db,dv]
+    Vbv = [[Vb[0,0],Vb[0,1],0],[Vb[1,0],Vb[1,1],0],[0,0,uv**2]]
+    uRbv = np.sqrt(np.matmul(np.matmul(gbv,Vbv),np.transpose(gbv)))
+    uRbv_R = uRbv/R
+    ub1 = fit.params['b1'].stderr
+    ub2 = fit.params['b2'].stderr
+    #print(fit.fit_report())
+    #print(fit4.fit_report())
+
+    #--------------------------------------------------------------------------
+    # Uncertainty of count rate
+
+    phi = erf(2*r/sigma/np.sqrt(2))-(2*sigma)/(r*np.sqrt(2*np.pi))*(1-np.exp(-(2*r**2)/sigma**2))
+    uc_c = phi/(2*R)*uv_v
+    urc_rc = phi/(2*vol*R**2)*dv*(uv**2)
+
+    #--------------------------------------------------------------------------
+    # Uncertainty of Calibration factor
+
+    uq_q = np.sqrt(ucref**2+uA**2)
+
+    #--------------------------------------------------------------------------
+    # Uncertainty of Cumulated Activity
+
+    ua0_a0 = 0;ulambda_lambda = 0;ualambda_alambda=0 # u_TAC is 0% since it is a mono exp with 2 data points
+    ua_a = np.sqrt(ua0_a0**2 + ulambda_lambda**2 - 2*ualambda_alambda + uq_q**2 + uRbv_R**2 + uc_c**2 -2*urc_rc)
+    #--------------------------------------------------------------------------
+    # Uncertainty of S-factor
+
+    g = [1,20,75,150,175,200,250,280,300,350,422,450,455]
+    s = np.divide([84.6,4.25,1.14,0.571,0.49,0.429,0.344,0.307,0.287,0.246,0.204,0.191,0.189],1000) # correctie voor mGy/MBq h naar Gy/MBq h)
+    model2 = lmfit.models.ExpressionModel("c1*(x**(-c2))")
+    c1=1
+    c2=1
+    t2 = np.linspace(1, g[-1], 1000)
+    params2 = model2.make_params(c1=c1,c2=c2)
+
+    fit2 = model2.fit(s, params2, x=g)
+    c1 = fit2.params["c1"].value
+    c2 = fit2.params["c2"].value
+    #print(fit2.fit_report())
+    s_conti = c1*(t2**(-c2))
+    S = c1*(m**(-c2))
+
+    us_s = np.abs(c2)*uv_v
+
+    #--------------------------------------------------------------------------
+    # Uncertainty of absorbed dose
+
+    uas_as = -(c2/(R*vol)*Atil*S*(phi/(2*vol)-dv)*(uv**2))/Atil/S
+    ud_d = np.sqrt((ua_a**2) + (us_s**2) + 2*uas_as)
+    D = Atil*S
+    if printing == True:
+        print(f'Dose: {"{:0.3f}".format(D)} +- {"{:0.3f}".format(D*ud_d)} Gy'
+              f'\n Relative error: {"{:0.3f}".format(ud_d*100)}%')
+
+    if showcurve:
+        fig1, ax1 = plt.subplots(1, 1, sharex=True, sharey=True)
+        ax1.scatter(volume, recco12, color='blue', label='12 mm FWHM')
+        ax1.scatter(volume, recco4, color='red', label='4.8 mm FWHM')
+        ax1.scatter(vol, corrected, color='green', label='12 mm FWHM fitted')
+        ax1.plot(t, R_conti, color='blue', label='12 mm FWHM fit')
+        ax1.plot(t, R_conti4, color='red', label='4.8 mm FWHM fit')
+        ax1.set_title("Partial volume correction map")
+        ax1.set_ylabel('Recovery coefficient []')
+        ax1.set_xlabel('Volume [mL]')
+        ax1.legend()
+
+        fig2, ax2 = plt.subplots(1, 1, sharex=True, sharey=True)
+        ax2.scatter(g, s, color='blue', label='S-factors for different masses')
+        ax2.scatter(m, S, color='green', label='S-factors for given mass')
+        ax2.plot(t2, s_conti, color='red', label='S-factor fit')
+        ax2.set_xscale('log')
+        ax2.set_yscale('log')
+    return ud_d*100,vol
+
+def volume():
+    results = []
+    uncs_kidney = []
+    uncs_ct = []
+    vols_kidney = sorted([216.24, 131.95, 166.23, 245.37, 141.42, 218.14, 195.66, 299.97, 199.42, 136.46, 161.35, 121.3, 209.05, 203.83,
+     207.89, 144.25, 159.55, 146.44, 209.47, 193.76, 185.04, 166.92, 191.92, 271.47, 174.86, 156.16, 139.61, 112.72,
+     239.73, 171.98, 200.36, 267.05, 153.36, 124.28, 252.02, 105.86, 234.12, 72.17, 145.01, 186.92])
+    vols_ct = []
+    vl = 181.48274 # avg volume of left kidney for 40 Lu-177-PSMA patients
+    vr = 170.07625 # avg volume of right kidney for 40 Lu-177-PSMA patients
+    vt = 13
+    Atil = 20084.971595808143
+
+    vlunc = uncertainty(vl, Atil)[0]
+    vrunc = uncertainty(vr, Atil)[0]
+    vtunc = uncertainty(vt, Atil)[0]
+
+    for i in range(350):
+        results.append(uncertainty(i+2,Atil))
+    for i in results:
+        uncs_ct.append(i[0])
+        vols_ct.append(i[1])
+
+    for i in vols_kidney:
+        uncs_kidney.append(uncertainty(i,Atil)[0])
+
+
+    fig1, ax1 = plt.subplots(1, 1, sharex=True, sharey=True)
+    #ax1.plot(vols_kidney, uncs_kidney, color='blue', label='40 patient kidney volumes')
+    ax1.plot(vols_ct, uncs_ct, color='black')
+    ax1.scatter(vl, vlunc, color='red', label=f'Average left kidney volume \n Uncertainty {"{:0.2f}".format(vlunc)}')
+    ax1.scatter(vr, vrunc, color='green', label=f'Average right kidney volume \n Uncertainty {"{:0.2f}".format(vrunc)}')
+    ax1.scatter(vt, vtunc, color='blue', label=f'Average tumour volume\n Uncertainty {"{:0.2f}".format(vtunc)}')
+    ax1.set_title("Effect of VOI size on the total uncertainty")
+    ax1.set_ylabel('Uncertainty [%]')
+    ax1.set_xlabel('Volume [mL]')
+    ax1.legend()
