@@ -8,14 +8,16 @@ from scipy.special import erf
 # 14/02/2023
 #--------------------------------------------------------------------------
 
-def uncertainty(vol,Atil,FWHM=0.8,showcurve=False,printing=False):
+def uncertainty(vol,Atil,FWHM,vox_w,showcurve=False,printing=False):
 
     plt.close('all')
-    vox_w = 0.4795199  # cm
     m = vol * 1.05
 
-    ucref = 1.2 / 100  # Fractional uncertainty 1.2%: https://iopscience.iop.org/article/10.1088/1742-6596/1505/1/012023/pdf
-    uA = 7.6 / 100  # for a Symbia T16, expected to be higher
+    # FWHM data
+
+    uA = 1.2 / 100  # Fractional uncertainty 1.2%: https://iopscience.iop.org/article/10.1088/1742-6596/1505/1/012023/pdf
+    # https://www.ncbi.nlm.nih.gov/pmc/articles/PMC6237185/ voor dial setting en onzekerheid
+    ucref = 7.6 / 100  # for a Symbia T16, expected to be higher
 
     # Uncertainty of volume
 
@@ -141,42 +143,115 @@ def uncertainty(vol,Atil,FWHM=0.8,showcurve=False,printing=False):
         ax2.plot(t2, s_conti, color='red', label='S-factor fit')
         ax2.set_xscale('log')
         ax2.set_yscale('log')
-    return ud_d*100,vol
-
-def volume():
-    results = []
-    uncs_kidney = []
-    uncs_ct = []
-    vols_kidney = sorted([216.24, 131.95, 166.23, 245.37, 141.42, 218.14, 195.66, 299.97, 199.42, 136.46, 161.35, 121.3, 209.05, 203.83,
-     207.89, 144.25, 159.55, 146.44, 209.47, 193.76, 185.04, 166.92, 191.92, 271.47, 174.86, 156.16, 139.61, 112.72,
-     239.73, 171.98, 200.36, 267.05, 153.36, 124.28, 252.02, 105.86, 234.12, 72.17, 145.01, 186.92])
-    vols_ct = []
-    vl = 181.48274 # avg volume of left kidney for 40 Lu-177-PSMA patients
-    vr = 170.07625 # avg volume of right kidney for 40 Lu-177-PSMA patients
-    vt = 13
-    Atil = 20084.971595808143
-
-    vlunc = uncertainty(vl, Atil)[0]
-    vrunc = uncertainty(vr, Atil)[0]
-    vtunc = uncertainty(vt, Atil)[0]
-
-    for i in range(350):
-        results.append(uncertainty(i+2,Atil))
-    for i in results:
-        uncs_ct.append(i[0])
-        vols_ct.append(i[1])
-
-    for i in vols_kidney:
-        uncs_kidney.append(uncertainty(i,Atil)[0])
+    return ud_d*100,vol,np.array([uv_v,uRbv_R,ua_a,us_s,ud_d])*100
 
 
-    fig1, ax1 = plt.subplots(1, 1, sharex=True, sharey=True)
-    #ax1.plot(vols_kidney, uncs_kidney, color='blue', label='40 patient kidney volumes')
-    ax1.plot(vols_ct, uncs_ct, color='black')
-    ax1.scatter(vl, vlunc, color='red', label=f'Average left kidney volume \n Uncertainty {"{:0.2f}".format(vlunc)}')
-    ax1.scatter(vr, vrunc, color='green', label=f'Average right kidney volume \n Uncertainty {"{:0.2f}".format(vrunc)}')
-    ax1.scatter(vt, vtunc, color='blue', label=f'Average tumour volume\n Uncertainty {"{:0.2f}".format(vtunc)}')
-    ax1.set_title("Effect of VOI size on the total uncertainty")
-    ax1.set_ylabel('Uncertainty [%]')
-    ax1.set_xlabel('Volume [mL]')
-    ax1.legend()
+results = []
+results_ver = []
+uncs_kidney = []
+uncs_kidney_ver = []
+uncs_ct = []
+uncs_ct_ver = []
+vols_ct = []
+vols_ct_ver = []
+
+
+vox_sym = 0.4795199 #cm
+vox_ver = 0.246 #cm
+fwhm_sym = 0.761 #cm
+fwhm_ver = 0.51 #cm uit tender
+
+vols_kidney = sorted([216.24, 131.95, 166.23, 245.37, 141.42, 218.14, 195.66, 299.97, 199.42, 136.46, 161.35, 121.3, 209.05, 203.83,
+ 207.89, 144.25, 159.55, 146.44, 209.47, 193.76, 185.04, 166.92, 191.92, 271.47, 174.86, 156.16, 139.61, 112.72,
+ 239.73, 171.98, 200.36, 267.05, 153.36, 124.28, 252.02, 105.86, 234.12, 72.17, 145.01, 186.92])
+vl = 181.48274 # avg volume of left kidney for 40 Lu-177-PSMA patients
+vr = 170.07625 # avg volume of right kidney for 40 Lu-177-PSMA patients
+vt = 13
+Atil = 20084.971595808143
+
+resvl = uncertainty(vl, Atil,fwhm_sym,vox_sym)
+resvl_ver = uncertainty(vl, Atil,fwhm_ver,vox_ver)
+vlunc = resvl[0]
+vlunc_ver = resvl_ver[0]
+resvr = uncertainty(vr, Atil,fwhm_sym,vox_sym)
+resvr_ver = uncertainty(vr, Atil,fwhm_ver,vox_ver)
+vrunc = resvr[0]
+vrunc_ver = resvr_ver[0]
+resvt = uncertainty(vt, Atil,fwhm_sym,vox_sym)
+resvt_ver = uncertainty(vt, Atil,fwhm_ver,vox_ver)
+vtunc = resvt[0]
+vtunc_ver = resvt_ver[0]
+resvts = []
+resvts_ver = []
+vtuncs =[]
+vtuncs_ver =[]
+
+for i in range(200):
+    results.append(uncertainty(i+2,Atil,fwhm_sym,vox_sym))
+    results_ver.append(uncertainty(i+2,Atil,fwhm_ver,vox_ver))
+
+for i in results:
+    uncs_ct.append(i[0])
+    vols_ct.append(i[1])
+
+for i in results_ver:
+    uncs_ct_ver.append(i[0])
+    vols_ct_ver.append(i[1])
+
+for i in vols_kidney:
+    uncs_kidney.append(uncertainty(i,Atil,fwhm_sym,vox_sym)[0])
+
+
+for i in range(2,14):
+    resvts.append(uncertainty(i, Atil,fwhm_sym,vox_sym))
+    resvts_ver.append(uncertainty(i, Atil,fwhm_ver,vox_ver))
+
+for i in resvts:
+    vtuncs.append(i[0])
+
+for i in resvts_ver:
+    vtuncs_ver.append(i[0])
+
+fig1, ax1 = plt.subplots(1, 1, sharex=True, sharey=True)
+#ax1.plot(vols_kidney, uncs_kidney, color='blue', label='40 patient kidney volumes')
+ax1.plot(vols_ct, uncs_ct, color='orange',label='Dual Head')
+ax1.plot(vols_ct_ver, uncs_ct_ver, color='purple',label='360° CZT')
+ax1.scatter(vl, vlunc, color='red', label=f'Average left kidney volume')
+#ax1.scatter(vl, vlunc, color='red', label=f'Average left kidney volume \n Uncertainty {"{:0.2f}".format(vlunc)} %')
+ax1.scatter(vl, vlunc_ver, color='red')
+#ax1.scatter(vr, vrunc, color='green', label=f'Average right kidney volume \n Uncertainty {"{:0.2f}".format(vrunc)} %')
+ax1.scatter(vr, vrunc, color='green', label=f'Average right kidney volume')
+ax1.scatter(vr, vrunc_ver, color='green')
+# #ax1.scatter(vt, vtunc, color='blue', label=f'Tumour volume of 13 mL\n Uncertainty {"{:0.2f}".format(vtunc)} %')
+ax1.scatter(vt, vtunc, color='blue', label=f'Tumour volume of 13 mL')
+ax1.scatter(vt, vtunc_ver, color='blue')
+#ax1.set_title("VOI size on the total uncertainty")
+ax1.set_ylabel('Dose uncertainty [%]')
+ax1.set_xlabel('Volume [mL]')
+ax1.legend()
+
+#--------------------------------------------------------------------------
+# Uncertainty all subsystems
+
+relvl = resvl[2]
+relvl_ver = resvl_ver[2]
+relvr = resvr[2]
+relvr_ver = resvr_ver[2]
+relvt = resvt[2]
+relvt_ver = resvt_ver[2]
+
+r = np.arange(len(relvl))
+width = 0.25
+
+fig2, ax2 = plt.subplots(1, 1, sharex=True, sharey=True)
+data = ["Volume","Rec coeff.","A(t)","S-factor","Absorbed dose"]
+ax2.bar(r-1.4*width,(relvl+relvr)/2,color='blue',label='Dual head, Average kidney',width=width)
+ax2.bar(r-0.4*width,(relvl_ver+relvr_ver)/2,color='lightblue',label='360° CZT, Average kidney',width=width)
+#ax2.bar(r,relvr,color='green',label='Right kidney',width=width)
+ax2.bar(r+0.4*width,relvt,color='red',label='Dual head, Tumour 13 mL',width=width)
+ax2.bar(r+1.4*width,relvt_ver,color='orange',label='360° CZT, Tumour 13 mL',width=width)
+plt.xticks(np.arange(len(data)), data)
+ax2.legend()
+ax2.set_ylabel('Dose uncertainty [%]')
+
+print(resvts_ver)
